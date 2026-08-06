@@ -8,3 +8,8 @@ streamlit-folium
 plotly
 dash 
 dash-bootstrap-components
+scikit-learn
+geopy
+pyarrow
+scipy
+statsmodels

@@ -1,0 +1,105 @@
+# Guide de Déploiement du Dashboard Dash (Système Sanitaire du Togo)
+
+Pour rendre le dashboard accessible à toute votre équipe sur un serveur, l'approche recommandée sous Linux est d'utiliser Gunicorn (serveur WSGI) couplé à Nginx (Proxy inverse) ou d'utiliser Docker. 
+
+Voici la méthode standard avec Gunicorn :
+
+## 1. Préparation de l'application (app.py)
+Assurez-vous que votre fichier `app.py` expose bien l'objet serveur Flask sous-jacent.
+Dans `app.py`, ajoutez cette ligne juste après l'initialisation de l'application :
+
+```python
+app = dash.Dash(__name__, use_pages=True)
+server = app.server # LIGNE IMPORTANTE POUR LE DEPLOIEMENT
+```
+
+## 2. Installation des dépendances sur le serveur
+Sur votre serveur Linux (Ubuntu/Debian par exemple), connectez-vous et clonez ou copiez votre projet.
+
+```bash
+# Se placer dans le dossier du projet
+cd /chemin/vers/sante-dashboard
+
+# Créer un environnement virtuel
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Installer les dépendances
+pip install -r requirements.txt
+
+# Installer Gunicorn (serveur de production)
+pip install gunicorn
+```
+
+## 3. Lancement manuel avec Gunicorn (Test)
+Vérifiez que l'application tourne bien en production via Gunicorn :
+
+```bash
+gunicorn -w 4 -b 0.0.0.0:8050 app:server
+```
+- `-w 4` : Utilise 4 workers (processus). En général, la règle est (2 x nombre de cœurs CPU) + 1.
+- `-b 0.0.0.0:8050` : Écoute sur toutes les interfaces réseau du serveur sur le port 8050.
+- `app:server` : Fait référence au fichier `app.py` et à la variable `server`.
+
+Vous devriez pouvoir y accéder via `http://VOTRE_IP_SERVEUR:8050`.
+
+## 4. Créer un service Systemd (Pour que l'app tourne en arrière-plan et redémarre toute seule)
+Créez un fichier de service :
+```bash
+sudo nano /etc/systemd/system/sante-dashboard.service
+```
+
+Ajoutez ce contenu (adaptez les chemins et l'utilisateur) :
+```ini
+[Unit]
+Description=Gunicorn instance to serve Sante Dashboard
+After=network.target
+
+[Service]
+User=soulemane
+Group=www-data
+WorkingDirectory=/chemin/vers/sante-dashboard
+Environment="PATH=/chemin/vers/sante-dashboard/.venv/bin"
+ExecStart=/chemin/vers/sante-dashboard/.venv/bin/gunicorn -w 4 -b 127.0.0.0:8050 app:server
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Activez et démarrez le service :
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start sante-dashboard
+sudo systemctl enable sante-dashboard
+```
+
+## 5. (Optionnel) Configuration de Nginx en Reverse Proxy
+Pour utiliser le port 80 (HTTP standard) et avoir une URL plus propre sans spécifier de port, installez Nginx :
+
+```bash
+sudo apt install nginx
+sudo nano /etc/nginx/sites-available/sante-dashboard
+```
+
+Ajoutez :
+```nginx
+server {
+    listen 80;
+    server_name votre_domaine.com OU_VOTRE_IP;
+
+    location / {
+        proxy_pass http://127.0.0.1:8050;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Activez la configuration :
+```bash
+sudo ln -s /etc/nginx/sites-available/sante-dashboard /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+Votre Dashboard est maintenant déployé, sécurisé et accessible à toute l'équipe via l'IP ou le nom de domaine de votre serveur !
